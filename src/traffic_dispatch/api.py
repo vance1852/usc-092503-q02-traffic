@@ -54,9 +54,9 @@ class JsonApplication:
             if method == "GET" and path == "/health":
                 return Response(200, {"status": "ok"})
             payload = self._json(body) if method in {"POST", "PUT", "PATCH"} else {}
-            actor = self._actor(normalized)
             if method == "POST" and path == "/users":
                 return Response(201, self.service.create_user(payload["user_id"], payload["display_name"], payload["role"]))
+            actor = self._actor(normalized)
             if method == "POST" and path == "/risk_records":
                 return Response(201, self.service.record_risk_record(actor, payload))
             if method == "GET" and len(parts) == 3 and parts[:2] == ["risk_records", "summary"]:
@@ -83,6 +83,24 @@ class JsonApplication:
                 return Response(200, self.service.approve_scenario(actor, parts[1], int(payload["expected_revision"])))
             if method == "POST" and len(parts) == 3 and parts[0] == "scenarios" and parts[2] == "run":
                 return Response(200, self.service.run_scenario(actor, parts[1], payload["as_of_date"]))
+            if method == "POST" and path == "/alerts":
+                return Response(201, self.service.accept_alert(actor, payload))
+            if method == "GET" and path == "/merge_candidates":
+                return Response(200, self.service.list_merge_candidates(actor, query.get("state", ["proposed"])[0]))
+            if method == "POST" and len(parts) == 3 and parts[0] == "merge_candidates" and parts[2] == "decision":
+                return Response(200, self.service.decide_merge_candidate(actor, int(parts[1]), payload["decision"], payload.get("note", "")))
+            if method == "POST" and len(parts) == 3 and parts[0] == "reports" and parts[2] == "split":
+                return Response(200, self.service.split_report(actor, parts[1], payload.get("reason", "")))
+            if method == "POST" and path == "/alert_resources":
+                return Response(201, self.service.register_resource_dispatch(actor, payload))
+            if method == "POST" and len(parts) == 3 and parts[0] == "alert_resources" and parts[2] == "cancel":
+                return Response(200, self.service.cancel_resource_dispatch(actor, parts[1], payload.get("reason", "")))
+            if method == "GET" and len(parts) == 2 and parts[0] == "cases":
+                return Response(200, self.service.case_detail(actor, parts[1], unmask=query.get("unmask", [""])[0] in {"1", "true", "yes"}))
+            if method == "GET" and len(parts) == 3 and parts[0] == "reports" and parts[2] == "timeline":
+                return Response(200, self.service.report_timeline(actor, parts[1]))
+            if method == "GET" and len(parts) == 3 and parts[0] == "cases" and parts[2] == "lineage":
+                return Response(200, self.service.case_lineage(actor, parts[1]))
             if method == "GET" and path == "/audit/chain":
                 return Response(200, self.service.audit_chain(actor))
             return Response(404, {"error": {"code": "route_not_found", "message": "接口不存在"}})

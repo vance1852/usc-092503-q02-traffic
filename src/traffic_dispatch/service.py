@@ -28,17 +28,20 @@ from .planning import (
     weighted_inventory_cost,
 )
 from .storage import initialize, transaction
+from .alert_intake import AlertIntakeMixin
 
 
 ROLE_PERMISSIONS = {
     "planner": {"risk_record.write", "catalog.write", "scenario.write", "scenario.run"},
-    "dispatcher": {"dispatch_request.write", "allocation.run", "deployment.write", "inventory.write"},
+    "dispatcher": {"dispatch_request.write", "allocation.run", "deployment.write", "inventory.write", "alert_resource.write", "case.read"},
     "risk": {"outage.write", "scenario.approve", "report.read"},
-    "auditor": {"report.read", "audit.read"},
+    "auditor": {"report.read", "audit.read", "case.read"},
+    "calltaker": {"alert.write", "candidate.read", "case.read"},
+    "supervisor": {"candidate.read", "candidate.decide", "case.read", "case.split", "contact.read"},
 }
 
 
-class TrafficDispatchService:
+class TrafficDispatchService(AlertIntakeMixin):
     def __init__(self, connection: sqlite3.Connection, clock=None) -> None:
         self.connection = connection
         self.clock = clock or SystemClock()
