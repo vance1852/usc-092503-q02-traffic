@@ -1,0 +1,67 @@
+{
+  "evidence_protocol_id": "demo-evidence-v1",
+  "version": 1,
+  "title": "路口事故证据一致性复核",
+  "task_family": "intersection-evidence",
+  "seed": 20260921,
+  "bootstrap_samples": 500,
+  "strata": [
+    {
+      "key": "clear-scene",
+      "label": "现场视线完整",
+      "required_reviews": 3
+    },
+    {
+      "key": "cross-source",
+      "label": "多来源记录交叉",
+      "required_reviews": 3
+    }
+  ],
+  "indicators": [
+    {
+      "key": "completed",
+      "label": "关键信息是否完整",
+      "kind": "binary",
+      "unit": null,
+      "direction": "higher"
+    },
+    {
+      "key": "completion_seconds",
+      "label": "时间线偏差秒数",
+      "kind": "continuous",
+      "unit": "s",
+      "direction": "lower"
+    },
+    {
+      "key": "interventions",
+      "label": "人工修订次数",
+      "kind": "count",
+      "unit": "count",
+      "direction": "lower"
+    }
+  ],
+  "evidence_group_weights": {
+    "clear-scene": "0.4",
+    "cross-source": "0.6"
+  },
+  "admission_rules": [
+    {
+      "indicator": "completed",
+      "statistic": "wilson_lower",
+      "operator": "gte",
+      "threshold": "0.29"
+    },
+    {
+      "indicator": "completion_seconds",
+      "statistic": "weighted_mean",
+      "operator": "lte",
+      "threshold": "65"
+    },
+    {
+      "indicator": "interventions",
+      "statistic": "weighted_mean",
+      "operator": "lte",
+      "threshold": "1.2"
+    }
+  ]
+}
