@@ -16,7 +16,14 @@ def run(workspace: Path) -> dict[str, object]:
     connection = sqlite3.connect(":memory:", isolation_level=None)
     connection.row_factory = sqlite3.Row
     service = TrafficDispatchService(connection, FrozenClock(datetime(2026, 9, 24, 8, 0, tzinfo=timezone.utc)))
-    for user_id, role in (("plan", "planner"), ("dispatch", "dispatcher"), ("risk", "risk"), ("audit", "auditor")):
+    for user_id, role in (
+        ("plan", "planner"),
+        ("dispatch", "dispatcher"),
+        ("risk", "risk"),
+        ("audit", "auditor"),
+        ("intake-1", "intake"),
+        ("leader", "supervisor"),
+    ):
         service.create_user(user_id, user_id, role)
     for index, close in enumerate(("108", "105", "102", "100", "98", "96"), start=18):
         service.record_risk_record("plan", {"risk_index": "COLLISION", "duty_date": f"2026-09-{index}", "index_value": close, "source_revision": f"rev-{index}", "observed_at": f"2026-09-{index}T21:00:00Z"})
@@ -30,7 +37,53 @@ def run(workspace: Path) -> dict[str, object]:
     service.create_scenario("plan", {"scenario_id": "road-section-restart", "name": "主干路恢复通行与事故需求回落", "risk_index_drop_percent": "9", "route_capacity_changes": {"corridor-east-1": "20"}, "demand_changes": {"center-east:patrol-unit": "-5"}})
     service.approve_scenario("risk", "road-section-restart", 1)
     scenario = service.run_scenario("plan", "road-section-restart", "2026-09-23")
-    result = {"status": "ok", "index": service.risk_summary("COLLISION"), "plan_id": allocation["plan_id"], "deployment": deployment, "scenario_run_id": scenario["run_id"], "audit": service.audit_chain("audit"), "workspace": workspace.name}
+    base_alarm = {
+        "source_channel": "party",
+        "reporter_name": "王小明",
+        "reporter_contact": "138-1234-5678",
+        "location_text": "G2京沪高速公路120公里处",
+        "occurred_at": "2026-09-24T07:30:00Z",
+        "vehicle_plates": ["沪A·D12345"],
+        "narrative": "早高峰两车追尾，占用最左侧车道",
+    }
+    first_alarm = service.receive_alarm("intake-1", {**base_alarm, "intake_id": "alarm-001", "idempotency_key": "alarm-key-001"})
+    replayed_alarm = service.receive_alarm("intake-1", {**base_alarm, "intake_id": "alarm-001", "idempotency_key": "alarm-key-001"})
+    second_alarm = service.receive_alarm("intake-1", {
+        **base_alarm,
+        "intake_id": "alarm-002",
+        "idempotency_key": "alarm-key-002",
+        "source_channel": "patrol",
+        "reporter_name": "李巡逻",
+        "reporter_contact": "139-0000-1111",
+        "location_text": "g2京沪高速120km",
+        "occurred_at": "2026-09-24T07:32:00Z",
+        "narrative": "巡逻车途中发现同一点位追尾",
+    })
+    third_alarm = service.receive_alarm("intake-1", {
+        **base_alarm,
+        "intake_id": "alarm-003",
+        "idempotency_key": "alarm-key-003",
+        "source_channel": "witness",
+        "reporter_name": "赵路人",
+        "reporter_contact": "137-9999-0000",
+        "occurred_at": "2026-09-24T07:48:00Z",
+        "vehicle_plates": [],
+        "narrative": "路人报警：同一路段追尾，车辆未看清",
+    })
+    pending = service.merge_candidates("leader", "pending")["candidates"]
+    confirmed = service.decide_merge("leader", pending[0]["candidate_id"], "confirm", "同一地点同一早高峰的重复报警") if pending else {"group_id": None}
+    group_id = confirmed["group_id"] or first_alarm["group_id"]
+    timeline = service.group_timeline("audit", group_id)
+    alarm_merge = {
+        "group_id": group_id,
+        "auto_merged": second_alarm["state"] == "merged",
+        "replayed": replayed_alarm.get("replayed", False),
+        "supervisor_confirmed": bool(pending),
+        "intakes": len(service.group_detail("audit", group_id)["intakes"]),
+        "timeline_events": len(timeline["events"]),
+        "third_alarm_state": third_alarm["state"],
+    }
+    result = {"status": "ok", "index": service.risk_summary("COLLISION"), "plan_id": allocation["plan_id"], "deployment": deployment, "scenario_run_id": scenario["run_id"], "alarm_merge": alarm_merge, "audit": service.audit_chain("audit"), "workspace": workspace.name}
     connection.close()
     return result
 

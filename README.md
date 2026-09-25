@@ -4,7 +4,7 @@
 
 ## 目录
 
-- `src/traffic_dispatch/`：事故风险指数、快处中心、道路走廊、应急资源、调度申请和响应情景；
+- `src/traffic_dispatch/`：事故风险指数、快处中心、道路走廊、应急资源、调度申请、响应情景，以及报警受理与候选合并；
 - `src/evidence_review/`：采集设备、证据规范、结构化记录导入、一致性分析、复核租约和采信决定；
 - `src/penalty_ops/`：事故案件、违法记录、风险告警、处置工单、处罚流转和审计；
 - `fixtures/`：离线验收使用的证据规范与结构化事故记录；
@@ -47,3 +47,13 @@ PYTHONPATH=src python3 -m penalty_ops.api --database penalties.sqlite3 --host 12
 ```
 
 三个服务均提供 `GET /health`，其余接口使用 JSON。SQLite 文件保存业务状态、幂等结果和审计记录，进程重启后可继续查询。
+
+## 报警受理与候选合并
+
+`traffic_dispatch` 服务新增接警能力，覆盖同一事故被当事人、路人和巡逻车重复报警的场景：
+
+- `POST /alarms`：接警员（`intake` 角色）受理报警。按 `idempotency_key` 幂等，重复提交返回原受理单；联系人与姓名只保存掩码和哈希，不明文落库。
+- 受理时按标准化地点、事发时间邻近、号牌线索和报案人信息逐维度打分，输出带中文解释的匹配组件；高置信度自动并案，中低置信度进入待裁决队列。
+- `GET /merge_candidates?state=pending`：值班长（`supervisor` 角色）查看待裁决候选；`POST /merge_candidates/{id}/decide` 携带 `decision` 与裁决理由确认或驳回。
+- `POST /incident_groups/{id}/split`：错误合并可带理由拆分，原案件组至少保留一条报警，处置历史不丢失。
+- `GET /incident_groups/{id}` 与 `GET /incident_groups/{id}/timeline`：还原案件组为何合并或分离，包含每条原始报警的来源渠道、报案时间和逐维度评分；已派出的调度资源只登记随车清单，不会被静默取消。

@@ -83,6 +83,22 @@ class JsonApplication:
                 return Response(200, self.service.approve_scenario(actor, parts[1], int(payload["expected_revision"])))
             if method == "POST" and len(parts) == 3 and parts[0] == "scenarios" and parts[2] == "run":
                 return Response(200, self.service.run_scenario(actor, parts[1], payload["as_of_date"]))
+            if method == "POST" and path == "/alarms":
+                return Response(201, self.service.receive_alarm(actor, payload))
+            if method == "GET" and len(parts) == 2 and parts[0] == "alarms":
+                return Response(200, self.service.alarm_intake(actor, parts[1]))
+            if method == "GET" and len(parts) == 3 and parts[0] == "alarms" and parts[2] == "candidates":
+                return Response(200, self.service.intake_candidates(actor, parts[1]))
+            if method == "GET" and path == "/merge_candidates":
+                return Response(200, self.service.merge_candidates(actor, query.get("state", ["pending"])[0]))
+            if method == "POST" and len(parts) == 3 and parts[0] == "merge_candidates" and parts[2] == "decide":
+                return Response(200, self.service.decide_merge(actor, int(parts[1]), payload["decision"], payload.get("reason", "")))
+            if method == "GET" and len(parts) == 2 and parts[0] == "incident_groups":
+                return Response(200, self.service.group_detail(actor, parts[1]))
+            if method == "GET" and len(parts) == 3 and parts[0] == "incident_groups" and parts[2] == "timeline":
+                return Response(200, self.service.group_timeline(actor, parts[1]))
+            if method == "POST" and len(parts) == 3 and parts[0] == "incident_groups" and parts[2] == "split":
+                return Response(200, self.service.split_group(actor, parts[1], payload.get("intake_ids"), payload.get("reason", "")))
             if method == "GET" and path == "/audit/chain":
                 return Response(200, self.service.audit_chain(actor))
             return Response(404, {"error": {"code": "route_not_found", "message": "接口不存在"}})

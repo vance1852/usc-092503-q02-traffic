@@ -14,7 +14,7 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS traffic_users (
     user_id TEXT PRIMARY KEY,
     display_name TEXT NOT NULL,
-    role TEXT NOT NULL CHECK(role IN ('planner','dispatcher','risk','auditor')),
+    role TEXT NOT NULL CHECK(role IN ('planner','dispatcher','risk','auditor','intake','supervisor')),
     active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
     created_at TEXT NOT NULL
 );
@@ -179,6 +179,67 @@ CREATE TABLE IF NOT EXISTS traffic_idempotency (
     created_at TEXT NOT NULL,
     PRIMARY KEY(scope, idempotency_key)
 );
+
+CREATE TABLE IF NOT EXISTS incident_groups (
+    group_id TEXT PRIMARY KEY,
+    state TEXT NOT NULL DEFAULT 'open' CHECK(state IN ('open','absorbed')),
+    merged_into_group_id TEXT REFERENCES incident_groups(group_id),
+    created_by TEXT NOT NULL REFERENCES traffic_users(user_id),
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS alarm_intakes (
+    intake_id TEXT PRIMARY KEY,
+    source_channel TEXT NOT NULL CHECK(source_channel IN ('party','witness','patrol','camera','other')),
+    reporter_name_masked TEXT NOT NULL,
+    reporter_name_sha256 TEXT,
+    contact_masked TEXT NOT NULL,
+    contact_sha256 TEXT NOT NULL,
+    location_raw TEXT NOT NULL,
+    location_standardized TEXT NOT NULL,
+    occurred_at TEXT NOT NULL,
+    reported_at TEXT NOT NULL,
+    vehicle_plates_json TEXT NOT NULL,
+    narrative TEXT NOT NULL,
+    group_id TEXT NOT NULL REFERENCES incident_groups(group_id),
+    idempotency_key TEXT NOT NULL UNIQUE,
+    received_by TEXT NOT NULL REFERENCES traffic_users(user_id),
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_alarm_intakes_window
+ON alarm_intakes(occurred_at, group_id);
+
+CREATE TABLE IF NOT EXISTS merge_candidates (
+    candidate_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    intake_id TEXT NOT NULL REFERENCES alarm_intakes(intake_id),
+    existing_intake_id TEXT NOT NULL REFERENCES alarm_intakes(intake_id),
+    score INTEGER NOT NULL,
+    confidence TEXT NOT NULL CHECK(confidence IN ('auto','review')),
+    components_json TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'pending'
+        CHECK(state IN ('pending','auto_confirmed','confirmed','rejected','superseded')),
+    decided_by TEXT REFERENCES traffic_users(user_id),
+    decided_at TEXT,
+    decision_reason TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE(intake_id, existing_intake_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_merge_candidates_state
+ON merge_candidates(state, candidate_id);
+
+CREATE TABLE IF NOT EXISTS incident_group_events (
+    event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    actor_id TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_incident_group_events_group
+ON incident_group_events(group_id, event_id);
 
 CREATE TABLE IF NOT EXISTS traffic_audit_events (
     event_id INTEGER PRIMARY KEY AUTOINCREMENT,

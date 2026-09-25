@@ -10,12 +10,14 @@ from typing import Any, Mapping
 
 from .clock import parse_utc
 from .errors import ValidationFailed
+from .intake import normalize_contact, normalize_name, normalize_plate
 
 
 IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{1,63}$")
 RISK_INDEXES = {"COLLISION", "INJURY", "CONGESTION", "HAZMAT", "SECONDARY", "CUSTOM"}
 RESOURCE_KINDS = {"patrol-unit", "tow-truck", "ambulance", "warning-kit", "evidence-kit", "rapid-response-team"}
 CENTER_KINDS = {"road-section", "command-center", "medical-center", "storage", "patrol-station"}
+SOURCE_CHANNELS = {"party", "witness", "patrol", "camera", "other"}
 
 
 def required_text(value: object, field: str, maximum: int = 256) -> str:
@@ -218,6 +220,59 @@ class DispatchRequest:
                 raw.get("requested_units"), "requested_units", minimum=Decimal("0.001")
             ),
             priority=priority,
+            idempotency_key=identifier(raw.get("idempotency_key"), "idempotency_key"),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class AlarmReport:
+    """一条原始报警的受理输入；联系人与姓名只用于归一化和哈希，不明文落库。"""
+
+    intake_id: str
+    source_channel: str
+    reporter_name: str
+    reporter_contact: str
+    location_text: str
+    occurred_at: str
+    vehicle_plates: tuple[str, ...]
+    narrative: str
+    idempotency_key: str
+
+    @classmethod
+    def from_dict(cls, raw: Mapping[str, Any]) -> "AlarmReport":
+        source_channel = required_text(raw.get("source_channel"), "source_channel", 16)
+        if source_channel not in SOURCE_CHANNELS:
+            raise ValidationFailed("source_channel 必须是 party、witness、patrol、camera 或 other")
+        occurred_at = required_text(raw.get("occurred_at"), "occurred_at", 40)
+        try:
+            parse_utc(occurred_at, "occurred_at")
+        except ValueError as exc:
+            raise ValidationFailed(str(exc)) from exc
+        plates_raw = raw.get("vehicle_plates", [])
+        if not isinstance(plates_raw, (list, tuple)) or len(plates_raw) > 8:
+            raise ValidationFailed("vehicle_plates 必须是不超过 8 条的数组")
+        plates: list[str] = []
+        for item in plates_raw:
+            plate = normalize_plate(required_text(item, "vehicle_plates 元素", 32))
+            if not 2 <= len(plate) <= 12:
+                raise ValidationFailed("vehicle_plates 元素归一化后必须是 2 到 12 个字符")
+            if plate not in plates:
+                plates.append(plate)
+        contact = normalize_contact(required_text(raw.get("reporter_contact"), "reporter_contact", 64))
+        if not 3 <= len(contact) <= 32:
+            raise ValidationFailed("reporter_contact 归一化后必须是 3 到 32 个字符")
+        name = normalize_name(required_text(raw.get("reporter_name"), "reporter_name", 64))
+        if not name:
+            raise ValidationFailed("reporter_name 不能为空")
+        return cls(
+            intake_id=identifier(raw.get("intake_id"), "intake_id"),
+            source_channel=source_channel,
+            reporter_name=name,
+            reporter_contact=contact,
+            location_text=required_text(raw.get("location_text"), "location_text", 256),
+            occurred_at=occurred_at,
+            vehicle_plates=tuple(plates),
+            narrative=required_text(raw.get("narrative"), "narrative", 2000),
             idempotency_key=identifier(raw.get("idempotency_key"), "idempotency_key"),
         )
 
